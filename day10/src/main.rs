@@ -1,4 +1,4 @@
-use std::{fs::read_to_string, str::FromStr};
+use std::{env::args, fs::read_to_string, process, str::FromStr};
 
 #[derive(Debug, Clone, Copy)]
 enum Command {
@@ -58,10 +58,11 @@ impl Register {
 
 impl std::fmt::Display for Register {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f)?;
         for &(cycle, x) in &self.values {
             let cycle = (cycle as isize - 1) % 40;
-            let lit = (cycle - 1..=cycle + 1).filter(|&x| x > 0).any(|sp| sp == x);
-            write!(f, "{}", if lit { "#" } else { "." })?;
+            let lit = (cycle - 1..=cycle + 1).any(|sp| sp == x);
+            write!(f, "{}", if lit { '\u{2588}' } else { ' ' })?;
             if cycle == 39 {
                 writeln!(f)?;
             }
