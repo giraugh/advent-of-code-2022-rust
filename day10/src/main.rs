@@ -1,4 +1,5 @@
-use std::{env::args, fs::read_to_string, process, str::FromStr};
+use common::aoc_input;
+use std::{fs::read_to_string, str::FromStr};
 
 #[derive(Debug, Clone, Copy)]
 enum Command {
@@ -21,21 +22,21 @@ impl FromStr for Command {
 
 type RegisterValue = (usize, isize); // cycle, x-register
 
-struct Register {
-    values: Vec<RegisterValue>,
+struct Cpu {
+    register_values: Vec<RegisterValue>,
 }
 
-impl Register {
+impl Cpu {
     pub fn new() -> Self {
         Self {
-            values: vec![(1, 1)],
+            register_values: vec![(1, 1)],
         }
     }
 
     pub fn process_commands(&mut self, commands: &[Command]) {
         for command in commands {
-            let &(cycle, x) = self.values.last().unwrap();
-            self.values.extend(
+            let &(cycle, x) = self.register_values.last().unwrap();
+            self.register_values.extend(
                 (match command {
                     Command::Noop => vec![(cycle + 1, x)],
                     Command::Add(add) => vec![(cycle + 1, x), (cycle + 2, x + add)],
@@ -46,7 +47,7 @@ impl Register {
     }
 
     pub fn signal_strength_sum(&self) -> isize {
-        self.values
+        self.register_values
             .iter()
             .take(220)
             .skip(19)
@@ -56,10 +57,10 @@ impl Register {
     }
 }
 
-impl std::fmt::Display for Register {
+impl std::fmt::Display for Cpu {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f)?;
-        for &(cycle, x) in &self.values {
+        for &(cycle, x) in &self.register_values {
             let cycle = (cycle as isize - 1) % 40;
             let lit = (cycle - 1..=cycle + 1).any(|sp| sp == x);
             write!(f, "{}", if lit { '\u{2588}' } else { ' ' })?;
@@ -72,11 +73,11 @@ impl std::fmt::Display for Register {
 }
 
 fn main() {
-    let input = read_to_string("./input.txt").unwrap();
+    let input = aoc_input!();
     let commands: Vec<Command> = input.lines().flat_map(FromStr::from_str).collect();
 
     // Compute registers
-    let mut register = Register::new();
+    let mut register = Cpu::new();
     register.process_commands(&commands);
     println!("[PT1] {}", register.signal_strength_sum());
 
@@ -88,18 +89,18 @@ fn main() {
 fn test_processing_commands_small() {
     let sample = "noop\naddx 3\naddx -5";
     let commands: Vec<Command> = sample.lines().flat_map(FromStr::from_str).collect();
-    let mut register = Register::new();
+    let mut register = Cpu::new();
     register.process_commands(&commands);
-    assert_eq!(register.values.get(3), Some(&(4, 4)));
+    assert_eq!(register.register_values.get(3), Some(&(4, 4)));
 }
 
 #[test]
 fn test_processing_commands_large() {
     let sample = read_to_string("./sample.txt").unwrap();
     let commands: Vec<Command> = sample.lines().flat_map(FromStr::from_str).collect();
-    let mut register = Register::new();
+    let mut register = Cpu::new();
     register.process_commands(&commands);
-    assert_eq!(register.values.get(19), Some(&(20, 21)));
+    assert_eq!(register.register_values.get(19), Some(&(20, 21)));
     assert_eq!(register.signal_strength_sum(), 13140);
     println!("{}", register);
 }
