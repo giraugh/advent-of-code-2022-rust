@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
 use common::aoc_input;
-use itertools::Itertools;
 use nom::{
     branch::alt,
     bytes::complete::tag,
@@ -10,8 +9,6 @@ use nom::{
     multi::separated_list0,
     sequence::{preceded, tuple},
 };
-use rand::{distributions::Uniform, prelude::Distribution, seq::SliceRandom, thread_rng, Rng};
-use tqdm::Iter;
 
 type ValveID = String;
 
@@ -34,106 +31,8 @@ struct NetworkPlan<'a> {
     actions: Vec<ValveAction>,
 }
 
-struct Jungle<'a> {
-    population: Vec<(Option<usize>, NetworkPlan<'a>)>,
-    crossover_rate: f64,
-    mutation_rate: f64,
-    survival_rate: f64,
-}
-
-impl<'a> Jungle<'a> {
-    fn new(network: &'a ValveNetwork, population_size: usize, plan_size: usize) -> Self {
-        // Generate an initial population
-        // this population will never open valves, that occurs through mutation
-        let mut rng = thread_rng();
-        let population = (0..population_size)
-            .map(|_| {
-                let mut current_position = "AA";
-                let actions = (0..plan_size)
-                    .map(|_| {
-                        // Create an "Open" command?
-                        if rng.gen_bool(0.3) && network.flow_rates[current_position] > 0 {
-                            ValveAction::Open
-                        } else {
-                            let next = network.edges[current_position].choose(&mut rng).unwrap();
-                            current_position = next;
-                            ValveAction::MoveTo(next.to_owned())
-                        }
-                    })
-                    .collect();
-                let plan = NetworkPlan { network, actions };
-                (plan.total_pressure_released(), plan)
-            })
-            .collect();
-
-        Jungle {
-            population,
-            crossover_rate: 0.8,
-            mutation_rate: 0.001,
-            survival_rate: 0.2,
-        }
-    }
-
-    /// Perform one step of the genetic algorithm
-    fn step(&mut self) {
-        // Sort population by fitness
-        self.population.sort_by_key(|(fitness, _)| *fitness);
-
-        // Determine proportions
-        let breeding_count = (self.population.len() as f64 * self.crossover_rate) as usize;
-        let suriviving_count = (self.population.len() as f64 * self.survival_rate) as usize;
-
-        // Determine which plans will breed
-        let mut breeding_population = Vec::new();
-        breeding_population.extend_from_slice(&self.population[0..breeding_count]);
-
-        // Create offspring
-        let mut offspring = Vec::new();
-        let mut rng = thread_rng();
-        let mate_range = Uniform::new(0, breeding_population.len());
-        for plan_index in 0..self.population.len() - suriviving_count - 2 {
-            let mate_index = mate_range.sample(&mut rng);
-            let new_child = breeding_population[plan_index % breeding_population.len()]
-                .1
-                .crossover(&breeding_population[mate_index].1);
-            offspring.push((Some(0), new_child));
-        }
-
-        // Create next generation
-        let mut next_generation = Vec::new();
-        next_generation.extend_from_slice(&self.population[0..suriviving_count]);
-        next_generation.append(&mut offspring);
-
-        // Add a few weak individuals to keep the genetic diversity higher
-        next_generation
-            .extend_from_slice(&self.population[self.population.len() - 2..self.population.len()]);
-
-        // Mutate population
-        for (_, plan) in next_generation.iter_mut() {
-            if thread_rng().gen_bool(self.mutation_rate) {
-                plan.mutate();
-            }
-        }
-
-        // Set new population and compute fitness
-        self.population = next_generation;
-
-        // Compute population fitnesses
-        for (fitness, plan) in self.population.iter_mut() {
-            *fitness = plan.total_pressure_released();
-        }
-    }
-
-    fn best_plan(&self) -> Option<&NetworkPlan<'a>> {
-        self.population
-            .iter()
-            .max_by_key(|(fitness, _)| fitness)
-            .map(|(_, plan)| plan)
-    }
-}
-
 impl<'a> NetworkPlan<'a> {
-    fn total_pressure_released(&self) -> Option<usize> {
+    fn total_pressure_released(&self) -> Result<usize, &'static str> {
         let mut released = 0;
         let mut open_valves = HashSet::new();
         let mut current_position = "AA";
@@ -149,7 +48,7 @@ impl<'a> NetworkPlan<'a> {
                 ValveAction::DoNothing => {}
                 ValveAction::MoveTo(valve_id) => {
                     if !self.network.edges[current_position].contains(valve_id) {
-                        return None;
+                        return Err("Cannot move to valve from current valve");
                     }
                     current_position = valve_id;
                 }
@@ -159,55 +58,17 @@ impl<'a> NetworkPlan<'a> {
             }
         }
 
-        Some(released)
-    }
-
-    fn len(&self) -> usize {
-        self.actions.len()
-    }
-
-    /* GA Stuff */
-
-    /// Merge two solutions to create a new child solution
-    fn crossover(&self, other: &Self) -> Self {
-        // Choose crossover point
-        let mut rng = thread_rng();
-        let shorter_len = self.len().min(other.len());
-        let crossover_point = Uniform::new(0, shorter_len).sample(&mut rng);
-
-        // Split dna
-        let my_dna = &self.actions[0..crossover_point];
-        let other_dna = &other.actions[crossover_point..];
-
-        // Generate child dna
-        let mut child_actions = Vec::new();
-        child_actions.extend_from_slice(my_dna);
-        child_actions.extend_from_slice(other_dna);
-
-        NetworkPlan {
-            network: self.network,
-            actions: child_actions,
-        }
-    }
-
-    /// Mutate the solution by swapping the order of two actions
-    fn mutate(&mut self) {
-        let mut rng = thread_rng();
-        let action_one = Uniform::new(0, self.len()).sample(&mut rng);
-        let action_two = Uniform::new(0, self.len()).sample(&mut rng);
-        self.actions.swap(action_one, action_two);
+        Ok(released)
     }
 }
 
 impl ValveNetwork {
     /// Find the sequence of actions which maximises the flow rate
     fn solve(&self, action_count: usize) -> NetworkPlan {
-        // This is a terrible idea
-        let mut jungle = Jungle::new(self, 6000, action_count);
-        for _ in (0..3000).tqdm() {
-            jungle.step()
+        NetworkPlan {
+            network: self,
+            actions: vec![ValveAction::DoNothing; action_count],
         }
-        jungle.best_plan().unwrap().clone()
     }
 }
 
@@ -285,7 +146,6 @@ mod test_with_sample {
         let network = SAMPLE_INPUT.parse::<ValveNetwork>().unwrap();
         let plan = network.solve(30);
         let pressure_released = plan.total_pressure_released().unwrap_or(0);
-        dbg!(plan);
         assert_eq!(pressure_released, 1651);
         // assert_eq!(
         //     plan.actions.into_iter().take(24).collect_vec(),
