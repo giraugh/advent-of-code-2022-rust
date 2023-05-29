@@ -40,7 +40,7 @@ struct RockLineSequence {
 
 #[derive(Debug, PartialEq)]
 enum SandOutcome {
-    BlockSource,
+    SourceBlocked,
     AtRest,
     FellIntoVoid,
 }
@@ -126,8 +126,11 @@ impl SandWorld {
     fn step(&mut self) -> SandOutcome {
         // Spawn location free?
         if !self.empty(&self.sand_spawn) {
-            return SandOutcome::BlockSource;
+            return SandOutcome::SourceBlocked;
         }
+
+        // Determine lowest rock row
+        let lowest_rock = self.lowest_rock_row();
 
         // Move sand until at rest or in void
         let mut curr = self.sand_spawn;
@@ -145,7 +148,6 @@ impl SandWorld {
             }
 
             // In void?
-            let lowest_rock = self.lowest_rock_row();
             if let Some(floor_offset) = self.floor_offset {
                 // Hit floor?
                 if curr.y >= (lowest_rock + floor_offset) - 1 {
@@ -210,7 +212,7 @@ fn main() {
         .unwrap();
     loop {
         match world.step() {
-            SandOutcome::BlockSource => break,
+            SandOutcome::SourceBlocked => break,
             SandOutcome::AtRest => continue,
             SandOutcome::FellIntoVoid => break,
         }
@@ -250,7 +252,7 @@ mod test_world {
             .unwrap();
         loop {
             match world.step() {
-                SandOutcome::BlockSource => break,
+                SandOutcome::SourceBlocked => break,
                 SandOutcome::AtRest => continue,
                 SandOutcome::FellIntoVoid => break,
             }
